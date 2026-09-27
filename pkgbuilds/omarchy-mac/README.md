@@ -12,6 +12,10 @@ Installing the package enables no services, but its vendor configuration applies
 
 Runtime dependencies are declared in `package()`, so the builder stages and tests the add-on without installing the desktop.
 
+## Ownership move (from omacom/omarchy-mac#631)
+
+From this pin the package ships its setup entrypoints in `/usr/lib/omarchy/mac`, the Apple pacman templates in `/usr/share/omarchy-mac/pacman` and the three-finger workspace swipe in `/usr/share/omarchy/default/hypr/platform`, and owns `/usr/bin/omarchy-hw-apple` and `/usr/share/omarchy/bin/omarchy-hw-apple`, which a quattro-upstream runtime built before that commit shipped. The runtime and this package must upgrade in one transaction, from the same candidate set; installing only this package over an older quattro runtime stops on the file conflict, and upgrading only the runtime drops the alias.
+
 ## Updates
 
 Updates are reviewed pins, never a branch. To release a change to the add-on:
