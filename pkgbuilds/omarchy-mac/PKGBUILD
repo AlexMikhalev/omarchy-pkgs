@@ -32,13 +32,14 @@ check() {
 
 package() {
   # Runtime-only: the builder does not need the Omarchy desktop to stage or
-  # test the add-on. The video decoder's firmware and VA-API driver and the
-  # screen recorder that works without a hardware encoder come with it too,
-  # since the runtime's Apple leaves that installed them are gone.
+  # test the add-on. The video decoder's firmware and VA-API driver, the
+  # screen recorder that works without a hardware encoder and Asahi's
+  # Widevine CDM come with it too, since the runtime's Apple leaves and
+  # migrations that installed them are gone.
   depends=('omarchy' 'bash' 'coreutils' 'diffutils' 'grep' 'sed' 'gawk' 'systemd' 'pciutils' 'kmod'
            'mkinitcpio' 'networkmanager' 'iwd' 'python' 'pipewire' 'pipewire-pulse' 'libpulse' 'wireplumber'
            'asahi-audio' 'alsa-ucm-conf-asahi' 'rtkit' 'pipewire-alsa'
-           'avd-fw' 'libva-v4l2_request-avd' 'wf-recorder')
+           'avd-fw' 'libva-v4l2_request-avd' 'wf-recorder' 'widevine')
 
   "$srcdir/addon/install" "$pkgdir"
   install -Dm644 "$srcdir/addon/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
