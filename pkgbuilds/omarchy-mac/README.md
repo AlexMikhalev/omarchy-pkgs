@@ -18,7 +18,7 @@ From this pin the package ships its setup entrypoints in `/usr/lib/omarchy/mac`,
 
 ## Platform root (from omacom/omarchy-mac#660)
 
-From a pin that includes it, the package ships the Mac's desktop files in `/usr/share/omarchy-platform` (Hyprland defaults, settings and gestures, key names, notch cutouts and `displays.conf`), which the runtime from omacom/omarchy#13362 reads at that fixed path, and keeps identical copies at the old `/usr/share/omarchy/default/.../platform` paths for a runtime that does not read the root yet. Publish it with or before that runtime: the runtime with an older omarchy-mac loses the Mac's binds, key names, notch cutouts and backlight choice.
+From this pin (`49c01e2dd`, 0.1.0-8) the package ships the Mac's desktop files in `/usr/share/omarchy-platform` (Hyprland defaults, settings and gestures, key names, notch cutouts and `displays.conf`), which the runtime from omacom/omarchy#13362 reads at that fixed path, and keeps identical copies at the old `/usr/share/omarchy/default/.../platform` paths for a runtime that does not read the root yet. Publish it with or before that runtime: the runtime with an older omarchy-mac loses the Mac's binds, key names, notch cutouts and backlight choice.
 
 ## Updates
 
