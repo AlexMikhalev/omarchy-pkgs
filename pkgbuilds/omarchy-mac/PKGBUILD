@@ -18,9 +18,9 @@ license=('MIT')
 makedepends=('git' 'findutils')
 checkdepends=('diffutils' 'python' 'systemd')
 # An exact quattro-upstream commit, never a branch.
-_commit=49c01e2dda5529f0a454d80fd448b69fc9bbc986
+_commit=aaae2cddb33cf5a214628b4a31a9bfa7b5da23f7
 source=("omarchy-mac::git+https://github.com/omacom/omarchy-mac.git#commit=${_commit}")
-sha256sums=('7823e7c728ad38212a3604c9a31e8c5dfb6911dd717d9b097cdf43cb35158859')
+sha256sums=('6ddfb748e2b58777af95e3733d128479a1fe16775e95b1953b47181ac066df78')
 
 prepare() {
   # Tests and staging must not be able to read the surrounding desktop source.
