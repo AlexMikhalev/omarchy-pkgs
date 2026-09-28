@@ -32,14 +32,16 @@ check() {
 
 package() {
   # Runtime-only: the builder does not need the Omarchy desktop to stage or
-  # test the add-on. The video decoder's firmware and VA-API driver, the
-  # screen recorder that works without a hardware encoder and Asahi's
-  # Widevine CDM come with it too, since the runtime's Apple leaves and
-  # migrations that installed them are gone.
+  # test the add-on. What every Mac needs comes from here, so an image's first
+  # boot has it offline and no owner can remove it: the speaker stack (whose
+  # speakersafetyd unit this package presets), audio routing, the GPU's Vulkan
+  # driver and the keyring for the Asahi repository its pacman templates
+  # configure. The runtime's Apple package list keeps the removable defaults
+  # (video decode, wf-recorder, widevine, asahi-bless).
   depends=('omarchy' 'bash' 'coreutils' 'diffutils' 'grep' 'sed' 'gawk' 'systemd' 'pciutils' 'kmod'
            'mkinitcpio' 'networkmanager' 'iwd' 'python' 'pipewire' 'pipewire-pulse' 'libpulse' 'wireplumber'
-           'asahi-audio' 'alsa-ucm-conf-asahi' 'rtkit' 'pipewire-alsa'
-           'avd-fw' 'libva-v4l2_request-avd' 'wf-recorder' 'widevine')
+           'asahi-audio' 'speakersafetyd' 'alsa-ucm-conf-asahi' 'rtkit' 'pipewire-alsa'
+           'vulkan-asahi' 'asahi-alarm-keyring')
 
   "$srcdir/addon/install" "$pkgdir"
   install -Dm644 "$srcdir/addon/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
