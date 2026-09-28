@@ -79,7 +79,10 @@ pushed. `BYPASS_MIN_RELEASE_AGE=1` bypasses the hold.
 
 Packages marked `"auto_merge": true` ride the unattended lane
 (`track-branches.yml`) instead of the reviewed sync PR: their bump PR is opened
-and auto-merged as soon as the build checks pass. `bin/sync-upstream --lane
+and auto-merged as soon as the build checks pass. Branch pins share one PR; a
+package that follows releases instead (`linux-firmware`) gets a PR of its own,
+so a release that fails its build waits for a person without holding up the
+branch pins. `bin/sync-upstream --lane
 reviewed|auto-merge|all` selects a lane; the scheduled workflows each pass their
 own. Packages that pin the same branch move in lockstep: if one of them fails
 to update, the run restores the others and reports the group as failed. A

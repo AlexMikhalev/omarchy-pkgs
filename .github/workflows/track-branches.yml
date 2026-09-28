@@ -9,6 +9,11 @@ name: Track upstream branches
 # and the merge publishes the artifacts. A tip that fails to build stays an
 # unmerged red PR that the next tick supersedes.
 #
+# An auto_merge package can instead follow tagged releases (linux-firmware
+# follows Arch's package of it). Each of those gets a PR of its own, so a
+# release that fails its build, or the comparison its recipe's check() makes,
+# waits for a person without holding up the branch pins or any other package.
+#
 # The PR and auto-merge use the PAT in PKGS_BOT_TOKEN so they trigger the
 # build and publish workflows. The built-in GITHUB_TOKEN cannot drive this
 # unattended chain. The PAT needs Contents: write and Pull requests: write
@@ -32,7 +37,62 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Branch pins share one PR because packages watching the same branch have
+  # to move in lockstep. Release-following packages get one PR each.
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      branches: ${{ steps.list.outputs.branches }}
+      releases: ${{ steps.list.outputs.releases }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Sort auto_merge packages into branch pins and releases
+        id: list
+        env:
+          PACKAGES: ${{ github.event.inputs.packages }}
+        run: |
+          set -euo pipefail
+          names=()
+          if [[ -n "${PACKAGES:-}" ]]; then
+            read -r -a names <<< "$PACKAGES"
+          else
+            for metadata in pkgbuilds/*/.omarchy/package.json; do
+              names+=("$(basename "$(dirname "$(dirname "$metadata")")")")
+            done
+          fi
+          branches=()
+          releases=()
+          for name in "${names[@]}"; do
+            if [[ ! $name =~ ^[a-z0-9@_+][a-z0-9@._+-]*$ ]]; then
+              echo "::error::invalid package name: $name"
+              exit 1
+            fi
+            metadata="pkgbuilds/$name/.omarchy/package.json"
+            if [[ ! -f $metadata ]] || ! jq -e '.auto_merge == true' "$metadata" >/dev/null; then
+              if [[ -n "${PACKAGES:-}" ]]; then
+                echo "::error::$name is not an auto_merge package"
+                exit 1
+              fi
+              continue
+            fi
+            if jq -e '.upstream.watch.git_branch? // empty' "$metadata" >/dev/null; then
+              branches+=("$name")
+            else
+              releases+=("$name")
+            fi
+          done
+          echo "branches=${branches[*]}" >> "$GITHUB_OUTPUT"
+          echo "releases=$(printf '%s\n' "${releases[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+
   track:
+    needs: plan
+    if: needs.plan.outputs.branches != ''
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -83,7 +143,7 @@ jobs:
               fi
             '
         env:
-          PACKAGES: ${{ github.event.inputs.packages }}
+          PACKAGES: ${{ needs.plan.outputs.branches }}
           UPSTREAM_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check for changes
@@ -157,5 +217,118 @@ jobs:
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg content \
               "🔴 <strong>Branch tracking failed</strong><br><a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">View run</a>" \
+              '{content: $content}')" \
+            "$BASECAMP_CHATBOT_URL"
+
+  track-release:
+    needs: plan
+    if: needs.plan.outputs.releases != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.plan.outputs.releases) }}
+
+    steps:
+      - name: Require the tracking token
+        env:
+          PKGS_BOT_TOKEN: ${{ secrets.PKGS_BOT_TOKEN }}
+        run: |
+          if [[ -z "$PKGS_BOT_TOKEN" ]]; then
+            echo "::error::Set PKGS_BOT_TOKEN to a PAT with Contents: write and Pull requests: write on this repository, owned by an account trusted to trigger builds."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Update ${{ matrix.package }} to its newest release
+        id: sync
+        run: |
+          docker run --rm \
+            -e PACKAGE="$PACKAGE" \
+            -e UPSTREAM_GITHUB_TOKEN="$UPSTREAM_GITHUB_TOKEN" \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
+            -v "$PWD/bin:/workspace/bin:ro" \
+            -v "$PWD/helpers:/workspace/helpers:ro" \
+            -v "$PWD/pkgbuilds:/workspace/pkgbuilds" \
+            -w /workspace \
+            archlinux:base-devel bash -lc '
+              set -euo pipefail
+
+              pacman -Syu --noconfirm git jq python libarchive
+
+              groupadd -g "$HOST_GID" runner
+              useradd -m -u "$HOST_UID" -g "$HOST_GID" runner
+              chown -R runner:runner /workspace/pkgbuilds
+
+              runuser -u runner -- ./bin/sync-upstream --lane auto-merge "$PACKAGE"
+            '
+        env:
+          PACKAGE: ${{ matrix.package }}
+          UPSTREAM_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for changes
+        if: ${{ !cancelled() && steps.sync.outcome != 'skipped' }}
+        id: changes
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            git status --porcelain
+            version="$(grep -m1 '^pkgver=' "pkgbuilds/$PACKAGE/PKGBUILD" | cut -d= -f2)-$(grep -m1 '^pkgrel=' "pkgbuilds/$PACKAGE/PKGBUILD" | cut -d= -f2)"
+            echo "title=Update $PACKAGE to $version" >> "$GITHUB_OUTPUT"
+            echo "### Updated $PACKAGE to $version" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Open or update the release PR
+        if: ${{ !cancelled() && steps.changes.outputs.has_changes == 'true' }}
+        id: pr
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ secrets.PKGS_BOT_TOKEN }}
+          commit-message: ${{ steps.changes.outputs.title }}
+          title: ${{ steps.changes.outputs.title }}
+          body: |
+            Automated update of `${{ matrix.package }}`, which follows upstream
+            releases on the unattended lane (`"auto_merge": true` in
+            `.omarchy/package.json`).
+
+            This PR auto-merges once the build checks pass, including whatever
+            the recipe's `check()` verifies. A failing build leaves it open for
+            a person; the next tracker run replaces it with the newer release.
+          branch: auto/track-${{ matrix.package }}
+          delete-branch: true
+          labels: automated
+
+      - name: Enable auto-merge
+        if: ${{ !cancelled() && steps.pr.outputs.pull-request-number != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.PKGS_BOT_TOKEN }}
+          PR: ${{ steps.pr.outputs.pull-request-number }}
+        run: |
+          if [[ "$(gh pr view "$PR" -R "${{ github.repository }}" --json autoMergeRequest --jq '.autoMergeRequest != null')" == true ]]; then
+            echo "auto-merge already enabled on #$PR"
+            exit 0
+          fi
+          gh pr merge --auto --merge "$PR" -R "${{ github.repository }}"
+
+      - name: Notify Basecamp on failure
+        if: failure() && env.BASECAMP_CHATBOT_URL != ''
+        env:
+          BASECAMP_CHATBOT_URL: ${{ secrets.BASECAMP_CHATBOT_URL }}
+        run: |
+          curl -s -o /dev/null \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg content \
+              "🔴 <strong>Release tracking failed for ${{ matrix.package }}</strong><br><a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">View run</a>" \
               '{content: $content}')" \
             "$BASECAMP_CHATBOT_URL"
