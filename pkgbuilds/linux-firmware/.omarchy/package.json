@@ -1,0 +1,19 @@
+{
+  "source": "local",
+  "release_ring": "fast",
+  "auto_merge": true,
+  "upstream": {
+    "watch": {
+      "json": "https://archlinux.org/packages/core/any/linux-firmware/json/",
+      "path": "pkgver",
+      "fields": {
+        "archrel": "pkgrel"
+      },
+      "variables": {
+        "_archrel": "{archrel}"
+      },
+      "revision": "{archrel}",
+      "revision_variable": "_archrel"
+    }
+  }
+}

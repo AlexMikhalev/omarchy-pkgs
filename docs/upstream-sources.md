@@ -182,6 +182,7 @@ in `origin` and has no effect on release selection.
 | `lib32-nvidia-580xx-utils` | regex | [https://download.nvidia.com/XFree86/Linux-x86_64/](https://download.nvidia.com/XFree86/Linux-x86_64/) |
 | `limine-mkinitcpio-hook` | git_tags | [https://gitlab.com/Zesko/limine-entry-tool.git](https://gitlab.com/Zesko/limine-entry-tool.git) |
 | `limine-snapper-sync` | git_tags | [https://gitlab.com/Zesko/limine-snapper-sync.git](https://gitlab.com/Zesko/limine-snapper-sync.git) |
+| `linux-firmware` | json | [https://archlinux.org/packages/core/any/linux-firmware/json/](https://archlinux.org/packages/core/any/linux-firmware/json/) |
 | `lmstudio-bin` | regex | [https://lmstudio.ai/download](https://lmstudio.ai/download) |
 | `localsend` | github | [localsend/localsend](https://github.com/localsend/localsend) |
 | `localsend-bin` | github | [localsend/localsend](https://github.com/localsend/localsend) |
@@ -225,8 +226,6 @@ in `origin` and has no effect on release selection.
 
 These packages were already excluded from automatic AUR updates. The migration preserves that policy.
 
-`linux-firmware-cirrus` is a deliberate hold: a self-retiring shim that ships Arch's linux-firmware-cirrus 20260910-2 payload to stable while stable's Arch snapshot is on 20260810-2 (Dell XPS 13 DX13260 / 1028:0e54 speaker firmware). It is versioned 20260810-3 so the genuine Arch package supersedes it as soon as the snapshot advances; bumping it to the Arch version would defeat that. Delete the recipe once stable's snapshot carries linux-firmware >= 20260910.
-
 `m1n1-aurora` and `uboot-asahi` are deliberate holds: Apple Silicon boot code, pinned by hand like `linux-aurora`, and bumped only after a cold boot on the qualification Macs. `m1n1-aurora` pins an aurora-silicon/m1n1 commit plus a local patch. `uboot-asahi` follows asahi-alarm's recipe and patch set (asahi-alarm/PKGBUILDs), which a tag watch on AsahiLinux/u-boot cannot carry.
 
 `cua-driver-bin` is a deliberate hold: Omarchy bumps it by hand, so a Cua release ships only when a maintainer has verified it. It keeps its `.omarchy/upstream.sh` hook and `min_release_age`, so lifting the hold means removing `"sync": false`. `cua-hyprland-plugin` declares no upstream source, so no automation updates it either.
@@ -238,4 +237,5 @@ These packages were already excluded from automatic AUR updates. The migration p
 - iA Duospace was deleted upstream. Its four legacy font files retain their original immutable pin while the other families track the current repository.
 - RustDesk reads hbb_common from the release gitlink; its existing build-time dependency/toolchain checks remain in force.
 - Spotify uses HTTPS and retains its signed Release/Packages verification.
+- `linux-firmware` is built from the signed kernel.org release, but its watch follows Arch's `[core]` package rather than upstream tags, so a release only arrives once Arch has shipped it. `_archrel` records the Arch build it must match: `check()` compares every split with that build (paths, split membership, decompressed content) and fails on any difference, which is what lets it ride the unattended lane. A difference means Arch changed its recipe (new splits, moved globs, reverts or backports) and a person ports it. To ship a release Arch has not packaged, bump `pkgver` by hand with `_archrel=0`, which skips the comparison; Arch's first build of that release moves `_archrel` forward again. `amd-ucode` is left to Arch.
 - Source and build compatibility still need review when upstream code changes. Direct watches remove AUR recipe churn, not the need to maintain packaging.

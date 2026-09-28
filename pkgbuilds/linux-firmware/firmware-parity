@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""Compare this build's firmware splits with Arch's packages of the same release.
+
+Every firmware path must land in the same split package as Arch's, and must
+resolve to the same bytes once decompressed. Comparing decompressed content
+rather than the .zst files keeps the check independent of the zstd version the
+build ran with. Symlinks are resolved across all splits, the way they resolve
+under /usr/lib/firmware once every package is installed, so rdfind replacing a
+duplicate with a link (or not) is not a difference.
+
+Arch's packages are downloaded from the Arch Linux Archive and verified against
+the Arch keyring before they are read.
+"""
+import argparse
+import hashlib
+import os
+import posixpath
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ARCHIVE = "https://archive.archlinux.org/packages/l/{name}/{name}-{release}-any.pkg.tar.zst"
+FIRMWARE = Path("usr/lib/firmware")
+MAX_LINKS = 40
+SHOWN = 50
+
+
+def binary_keyring(keyring, work):
+    """gpgv reads binary keyrings only; Arch ships archlinux.gpg armored."""
+    if keyring.read_bytes()[:1] != b"-":
+        return keyring
+    home = work / "gnupg"
+    home.mkdir(mode=0o700)
+    dest = work / "keyring.gpg"
+    subprocess.run(["gpg", "--batch", "--quiet", "--homedir", str(home), "--dearmor", "--output", str(dest), str(keyring)], check=True)
+    return dest
+
+
+def fetch_reference(split, release, keyring, dest):
+    name = f"linux-firmware-{split}"
+    url = ARCHIVE.format(name=name, release=release)
+    package = dest / f"{name}.pkg.tar.zst"
+    for target, source in ((package, url), (package.with_name(package.name + ".sig"), url + ".sig")):
+        subprocess.run(["curl", "--proto", "=https", "-fsSL", "--retry", "3", "-o", str(target), source], check=True)
+    subprocess.run(["gpgv", "--quiet", "--keyring", str(keyring), str(package) + ".sig", str(package)], check=True)
+    root = extract(package, dest / split)
+    package.unlink()
+    return root
+
+
+def extract(package, root):
+    """Unpack a package's files, leaving out pacman's top-level metadata
+    (.PKGINFO, .MTREE, ...) but keeping dotfiles further down the tree."""
+    root.mkdir()
+    subprocess.run(["bsdtar", "-xf", str(package), "-C", str(root), "usr"], check=True)
+    return root
+
+
+def entries(roots):
+    """Map each firmware path to (split, absolute path) across every split,
+    and list the real directories of the merged tree."""
+    found = {}
+    directories = set()
+    for split, root in roots.items():
+        base = root / FIRMWARE
+        if not base.is_dir():
+            continue
+        for directory, dirs, files in os.walk(base):
+            directories.add(Path(directory).relative_to(base).as_posix())
+            for name in files + [d for d in dirs if (Path(directory) / d).is_symlink()]:
+                path = Path(directory) / name
+                rel = path.relative_to(base).as_posix()
+                if rel in found:
+                    raise SystemExit(f"{rel} is in both {found[rel][0]} and {split}")
+                found[rel] = (split, path)
+    return found, directories
+
+
+def resolve(rel, found):
+    """Follow symlinks component by component inside the merged firmware tree."""
+    parts = rel.split("/")
+    hops = 0
+    index = 1
+    while index <= len(parts):
+        prefix = "/".join(parts[:index])
+        entry = found.get(prefix)
+        if entry and entry[1].is_symlink():
+            hops += 1
+            if hops > MAX_LINKS:
+                return None
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(prefix), os.readlink(entry[1])))
+            parts = target.split("/") + parts[index:]
+            index = 1
+            continue
+        index += 1
+    return "/".join(parts)
+
+
+def content(path):
+    digest = hashlib.sha256()
+    if path.name.endswith(".zst"):
+        with subprocess.Popen(["zstd", "-dcq", str(path)], stdout=subprocess.PIPE) as proc:
+            for chunk in iter(lambda: proc.stdout.read(1 << 20), b""):
+                digest.update(chunk)
+        if proc.returncode:
+            raise SystemExit(f"zstd could not decompress {path}")
+    else:
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1 << 20), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
+def fingerprint(roots):
+    found, directories = entries(roots)
+    result = {}
+    for rel, (split, path) in found.items():
+        target = resolve(rel, found)
+        if target is None:
+            value = "symlink loop"
+        elif target in directories:
+            value = f"directory {target}"
+        elif target in found:
+            value = content(found[target][1])
+        else:
+            value = f"dangling -> {target}"
+        result[rel] = (split, value)
+    return result
+
+
+def compare(ours, theirs):
+    problems = []
+    for rel in sorted(ours.keys() | theirs.keys()):
+        mine, arch = ours.get(rel), theirs.get(rel)
+        if mine == arch:
+            continue
+        if mine is None:
+            problems.append(f"missing: {rel} (Arch ships it in {arch[0]})")
+        elif arch is None:
+            problems.append(f"extra: {rel} (built into {mine[0]}, not in Arch's packages)")
+        elif mine[0] != arch[0]:
+            problems.append(f"moved: {rel} is in {mine[0]}, Arch ships it in {arch[0]}")
+        else:
+            problems.append(f"differs: {rel} ({mine[1][:16]} here, {arch[1][:16]} in Arch)")
+    return problems
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("staging", type=Path, help="directory holding one <split>/usr/lib/firmware tree per split")
+    parser.add_argument("splits", nargs="+", help="split names, as in linux-firmware-<split>")
+    parser.add_argument("--release", help="Arch pkgver-pkgrel to compare against")
+    parser.add_argument("--keyring", type=Path, default=Path("/usr/share/pacman/keyrings/archlinux.gpg"))
+    parser.add_argument("--reference", type=Path, help="already extracted <split> trees to compare against, instead of downloading")
+    args = parser.parse_args()
+
+    ours = fingerprint({split: args.staging / split for split in args.splits})
+
+    with tempfile.TemporaryDirectory(prefix="firmware-parity-") as work:
+        if args.reference:
+            reference = {split: args.reference / split for split in args.splits}
+        elif args.release:
+            keyring = binary_keyring(args.keyring, Path(work))
+            reference = {split: fetch_reference(split, args.release, keyring, Path(work)) for split in args.splits}
+        else:
+            parser.error("either --release or --reference is required")
+        theirs = fingerprint(reference)
+
+    problems = compare(ours, theirs)
+    against = args.release or args.reference
+    if problems:
+        print(f"==> ERROR: {len(problems)} firmware paths differ from Arch's {against}:", file=sys.stderr)
+        for problem in problems[:SHOWN]:
+            print(f"    {problem}", file=sys.stderr)
+        if len(problems) > SHOWN:
+            print(f"    ... and {len(problems) - SHOWN} more", file=sys.stderr)
+        return 1
+    print(f"==> {len(ours)} firmware paths match Arch's {against} across {len(args.splits)} splits")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
