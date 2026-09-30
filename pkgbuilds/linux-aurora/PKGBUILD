@@ -15,8 +15,8 @@ pkgrel=12
 # Immutable pin on aurora-silicon/linux (branch aurora-wip). Every bump is a
 # PR that moves _commit and the archive checksum; the pinned commit is cold-boot
 # qualified on MacBook Pro 14" M1 Pro (j314s) and 16" M2 Max (j416c) first.
-# The .patch sources are reverts of branch commits that break those Macs; each
-# names the commit it reverts and why.
+# The .patch source reverts a branch commit that breaks those Macs; it names
+# the commit it reverts and why.
 _commit=fe6d8136ad17a78bc4eedf8583fc6afabba48641
 
 _m1n1_version=1.6.1
@@ -39,13 +39,11 @@ source=(
   config         # the main kernel config file
   rust-toolchain.toml
   0001-Revert-iommu-apple-dart-Support-T8140-DARTs-and-firm.patch
-  0002-Revert-mfd-macsmc-Only-register-the-second-GPIO-bank.patch
 )
 sha256sums=('566807bca15e3ea22a8e4f7e29687afddb5fd354d297bf3fd4a10304a92dc5d9'
             'e22ee59bb4a972f8b12c1423e4bc7e548e1d425a2f24c20ee4e762360bcc29a7'
             '2a95563bb9f5b216cc3c170a17e9471448bc63a7084bdd67df23d074939b366c'
-            '5d9949fa42bd098074424e918adbfc8bbb9fce0cf3c4dc98c7ac9d6882d59b40'
-            'c71dc7edbc09d62a89191bcaaea86fa43395b9662290305b7747fcf78b97044d')
+            '5d9949fa42bd098074424e918adbfc8bbb9fce0cf3c4dc98c7ac9d6882d59b40')
 
 # Kbuild takes ARCH literally and knows arm64, not aarch64.
 export ARCH=arm64
