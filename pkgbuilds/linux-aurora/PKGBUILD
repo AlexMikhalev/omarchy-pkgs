@@ -43,7 +43,7 @@ source=(
 sha256sums=('566807bca15e3ea22a8e4f7e29687afddb5fd354d297bf3fd4a10304a92dc5d9'
             'e22ee59bb4a972f8b12c1423e4bc7e548e1d425a2f24c20ee4e762360bcc29a7'
             '2a95563bb9f5b216cc3c170a17e9471448bc63a7084bdd67df23d074939b366c'
-            '5d9949fa42bd098074424e918adbfc8bbb9fce0cf3c4dc98c7ac9d6882d59b40')
+            '300e1bdd7d0f15c110a2cf4bbab8493d0960fe4607d3cd5b412b9b755b223a78')
 
 # Kbuild takes ARCH literally and knows arm64, not aarch64.
 export ARCH=arm64
