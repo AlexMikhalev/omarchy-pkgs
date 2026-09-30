@@ -17,7 +17,8 @@ pkgrel=1
 # An exact commit on aurora-silicon/linux (branch aurora-wip), moved by the
 # git_branch upstream watch in .omarchy/package.json. A rebase onto another
 # kernel version fails prepare() until _auroraver/_aurorarel and the watch's
-# version template are bumped by hand.
+# version template are bumped by hand. So does a force-push that lowers the
+# branch's commit count: the watch skips it as older until then.
 _commit=fe6d8136ad17a78bc4eedf8583fc6afabba48641
 pkgver=7.1.12.aurora2.r1453145.gfe6d813
 

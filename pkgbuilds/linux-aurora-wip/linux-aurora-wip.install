@@ -32,6 +32,7 @@ _aurora_wip_notice() {
   cat <<'EOF'
 ==> linux-aurora-wip is a second boot menu entry, after linux-aurora, which stays the default.
     To test it, pick it in the boot menu; any other boot starts linux-aurora.
+    While it runs, omarchy-apple-silicon-boot-check refuses (it checks linux-aurora's boot).
     To remove it, boot linux-aurora and run: sudo pacman -Rns linux-aurora-wip linux-aurora-wip-headers
 EOF
   [[ -e /var/lib/omarchy/limine.enabled ]] ||
